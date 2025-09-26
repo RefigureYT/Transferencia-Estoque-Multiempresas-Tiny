@@ -1,0 +1,27 @@
+{
+  "name": "transferencia-estoque-multiempresas-tiny",
+  "version": "1.0.0",
+  "description": "Transfere automaticamente os estoques de múltiplas empresas para o depósito principal, permitindo a entrada de NF-es e o estorno de produtos (devoluções), garantindo consistência e evitando divergências em kits.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RefigureYT/Transferencia-Estoque-Multiempresas-Tiny.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RefigureYT/Transferencia-Estoque-Multiempresas-Tiny/issues"
+  },
+  "homepage": "https://github.com/RefigureYT/Transferencia-Estoque-Multiempresas-Tiny#readme",
+  "dependencies": {
+    "axios": "^1.12.2",
+    "dotenv": "^17.2.2",
+    "pg": "^8.16.3"
+  }
+}
