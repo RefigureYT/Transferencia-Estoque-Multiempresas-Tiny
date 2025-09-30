@@ -1,7 +1,9 @@
 // ###   ./src/services/session.service.js   ###
 import { buscarNovoTokenDaAPI } from './tinyApi.service.js';
+import { listaEmpresasDefinidas } from '../main.js';
 
 let _accessToken = null;
+let _listaTokensEmpresa = [];
 
 /**
  * @description Obtém o token de acesso atual. Se não houver um, busca um novo.
@@ -9,16 +11,24 @@ let _accessToken = null;
  * @returns {Promise<string>} O token de acesso válido.
  */
 
-export async function getAccessToken() {
-    // Se já tivermos um token salvo, retorna ele
-    if (_accessToken) {
-        console.log('[SessionService] Retornando token do cache em memória.');
-        return _accessToken;
-    }
+export async function getAccessToken(empresa) {
+    _listaTokensEmpresa = listaEmpresasDefinidas;
 
-    // Caso não tenha em memória, busca um novo, armazena e retorna.
-    console.log('[SessionService] Token não encontrado em cache. Buscando um novo...');
-    return await revalidarToken();
+    // Verifica se o valor já existe dentro de _listaTokensEmpresa
+    const listaEmpresaRecebida = _listaTokensEmpresa.find(v => v.empresa === empresa);
+
+    if (listaEmpresaRecebida) {
+        if (listaEmpresaRecebida.accessToken !== null) {
+            // console.log('[SessionService] Retornando token do cache em memória.');
+            return listaEmpresaRecebida.accessToken;
+        } else {
+            console.log('[SessionService] Token não encontrado em cache. Buscando um novo...');
+            const token = await revalidarToken(listaEmpresaRecebida.tokenQuery); // Busca chave de api
+            listaEmpresaRecebida.accessToken = token[0].access_token; // adiciona à memória (lista)
+
+            return listaEmpresaRecebida.accessToken; // Retorna a chave de api que está na memória (lista)
+        }
+    }
 }
 
 /**
@@ -27,10 +37,10 @@ export async function getAccessToken() {
  * @returns {Promise<string>} O NOVO TOKEN DE ACESSO.
  */
 
-export async function revalidarToken() {
+export async function revalidarToken(querySql) {
     try {
         console.log('[SessionService] Forçando revalidação do token...');
-        const novoToken = await buscarNovoTokenDaAPI(); // Função que faz a lógica de busca
+        const novoToken = await buscarNovoTokenDaAPI(querySql); // Função que faz a lógica de busca
 
         if (!novoToken) {
             throw new Error('A busca por um novo token retornou um valor vazio.');

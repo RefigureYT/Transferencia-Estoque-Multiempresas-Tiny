@@ -137,3 +137,11 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+
+# Kelvinho ;-)
+data/*
+gerar_mapa_diretorio.py
+mapa_diretorio.ini
+mapa_visual.txt
+mapa_conteudo.ini
