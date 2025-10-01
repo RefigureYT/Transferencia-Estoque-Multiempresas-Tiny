@@ -1,0 +1,23 @@
+# `tinyApi.service.js`
+
+Este módulo é o principal ponto de interação com a API do Tiny ERP. Ele encapsula as chamadas à API, implementando lógicas robustas de retentativa e tratamento de erros para garantir a resiliência da aplicação, especialmente em cenários de tokens expirados ou limites de requisição excedidos.
+
+## Funcionalidades Principais
+
+O módulo `tinyApi.service.js` define a classe **`TinyApiError`**, um erro customizado que encapsula detalhes específicos de falhas da API Tiny, como status HTTP, URL da requisição, dados enviados e recebidos, facilitando a depuração. Além disso, a função **`buscarNovoTokenDaAPI(querySql)`** atua como um auxiliar, executando uma query SQL no banco de dados para buscar um novo token de acesso à API, sendo utilizada pelo `session.service.js`. Esta função recebe `querySql` (string) como parâmetro e retorna uma Promise que resolve com o token.
+
+Outra funcionalidade crucial é a função **`getProdTiny(typeQuery, query, empresa, situacao = 'A')`**, que busca informações de um produto na API do Tiny ERP. Ela implementa um mecanismo de retentativa com backoff exponencial para lidar com erros 401/403 (token inválido/expirado) e 429 (Too Many Requests), garantindo a continuidade da operação. Os parâmetros incluem `typeQuery` (string) para o tipo de filtro (ex: `codigo`, `nome`, `id`), `query` (string|number) para o valor a ser buscado, `empresa` (string) para identificar a configuração e o token, e `situacao` (string, opcional, padrão: `A` para Ativo). A função retorna uma Promise que resolve com o objeto de dados do produto da API e lança `TinyApiError` para erros não tratáveis ou falhas persistentes após retentativas.
+
+A função **`editEstoqueProdTiny(fromEmpresa, idProd, tipoMovimento, qtdProd, idEstoque, toEmpresa, precoUnitario = 0)`** realiza a movimentação de estoque de um produto específico na API do Tiny ERP. Assim como `getProdTiny`, ela inclui a lógica de retentativa para erros 401/403 e 429. Uma observação detalhada é gerada para o lançamento de estoque, indicando a transferência entre empresas. Os parâmetros são `fromEmpresa` (string) para a empresa que realiza a movimentação, `idProd` (string|number) para o ID do produto no Tiny, `tipoMovimento` (string) para o tipo de movimento (`E` para Entrada, `S` para Saída, `B` para Balanço), `qtdProd` (number) para a quantidade a ser movimentada, `idEstoque` (string|number) para o ID do depósito, `toEmpresa` (string) para a empresa de destino (para observação), e `precoUnitario` (number, opcional, padrão: 0). A função retorna uma Promise que resolve com o objeto de resposta da API (ex: `{ "idLancamento": 901853015 }`) e lança erros para falhas não recuperáveis.
+
+Finalmente, a função **`getEstoqueProdTiny(empresa)`** busca informações de estoque de um produto específico na API do Tiny ERP. Ela utiliza `getProdTiny` internamente para obter o ID do produto e, em seguida, faz a requisição para o endpoint de estoque. O parâmetro `empresa` (string) é a sigla ou nome da empresa, e a função retorna uma Promise que resolve com os dados de estoque do produto.
+
+## Dependências
+
+As dependências deste módulo incluem `axios` para fazer requisições HTTP à API, `luxon` para manipulação de datas e horas, `database.service.js` para a função `executarQueryInDb` (utilizada por `buscarNovoTokenDaAPI`), `main.js` para acessar a variável global `listaEmpresasDefinidas`, e `session.service.js` para as funções `getAccessToken` e `revalidarToken`.
+
+## Como Depurar
+
+Para depurar este módulo, é fundamental observar os **logs detalhados** gerados no console (`console.log`, `console.warn`, `console.error`), que fornecem informações sobre o progresso das requisições, retentativas e erros. Em caso de **falha na API**, um `TinyApiError` é lançado, contendo detalhes cruciais como status HTTP, URL, método, dados da requisição e resposta da API, o que é essencial para identificar a causa raiz do problema.
+
+Se ocorrerem **erros 401/403 (Autenticação)**, o módulo tentará revalidar o token. Se a revalidação falhar, o problema pode estar na configuração do `tokenQuery` no `.env` ou na conectividade com o banco de dados. Para **erros 429 (Too Many Requests)**, o módulo implementa um mecanismo de espera. Se o erro persistir após todas as retentativas, a API do Tiny pode estar sob alta carga ou o limite de requisições está sendo excedido de forma consistente; neste caso, considere aumentar os tempos de espera ou reduzir a frequência das chamadas. Por fim, **erros de rede** (sem `err.response`) indicam problemas de conectividade, sendo necessário verificar a conexão com a internet e se o endpoint da API do Tiny está acessível.
