@@ -23,6 +23,7 @@ import { getAccessToken } from './services/session.service.js';
 // ## tinyPuppeteer.service.js ##
 import { baixarPlanilhaDeposito } from './services/tinyPuppeteer.service.js';
 import { limparArquivosPorExtensao } from './services/tinyPuppeteer.service.js';
+import { filter } from 'puppeteer-core/lib/cjs/third_party/rxjs/rxjs.js';
 
 // #### main.js ####
 // Variáveis globais
@@ -55,11 +56,28 @@ async function main() {
     console.log('==== [ END ] ====');
 
     for (const empresa of listaEmpresasDefinidas) {
-        if (empresa.isMaster) continue; // Pula a empresa principal        
-        const a = filtrarPlanilha(`./data/inventario-${empresa.empresa.toLowerCase()}.xls`, 'F', '!=0');
+        if (empresa.isMaster) continue; // Pula a empresa principal
+        const filterMap = {
+            true_true: '!=0',  // pode positivos e negativos → diferente de zero
+            false_true: '<0',   // só negativos
+            true_false: '>0',   // só positivos
+            false_false: null   // nenhum → não faz nada
+        };
+
+        if (filterMap[`${empresa.transfPositivo}_${empresa.transfNegativo}`] === null) {
+            console.log(`\n--- Nenhuma transferência configurada para a empresa ${empresa.nomeEmpresa}. Pulando. ---`);
+            continue; // Pula para a próxima empresa
+        }
+
+        const a = filtrarPlanilha(`./data/inventario-${empresa.empresa.toLowerCase()}.xls`, 'F', filterMap[`${empresa.transfPositivo}_${empresa.transfNegativo}`]);
         // const b = a.filter(v => String(v.codigo_sku).trim().toUpperCase().includes("JP0173")); // -=- DEBUG -=-
 
-        console.log(`Foram localizados ${a.length} produtos com o estoque diferente de 0 na empresa ${empresa.nomeEmpresa}`);
+        const messageEstoque = filterMap[`${empresa.transfPositivo}_${empresa.transfNegativo}`] === '<0' ?
+                                'menor que 0' : filterMap[`${empresa.transfPositivo}_${empresa.transfNegativo}`] === '>0' ?
+                                'maior que 0' : 
+                                'diferente de 0';
+
+        console.log(`Foram localizados ${a.length} produtos com o estoque ${messageEstoque} na empresa ${empresa.nomeEmpresa}`);
         const objEmpresaMaster = listaEmpresasDefinidas.find(v => v.isMaster === true);
 
         for (const p of a) {
@@ -185,27 +203,6 @@ async function transfEstoque(p, empresaFilial, objEmpresaMaster) {
         return false; // Sinaliza falha para o loop externo
     }
 }
+
 // Outras lógicas de inicialização podem ser adicionadas aqui
 main();
-// --- IGNORE ---
-
-
-
-// ✅ Sucesso! Produto encontrado para a empresa JP.
-// {
-//   itens: [
-//     {
-//       id: 785316587,
-//       sku: 'JP7996',
-//       descricao: '5mts de Linha Para Vara Telescópica',
-//       tipo: 'S',
-//       situacao: 'A',
-//       dataCriacao: '2023-12-14 16:46:49',
-//       dataAlteracao: '2025-01-30 16:56:35',
-//       unidade: 'UN',
-//       gtin: '',
-//       precos: [Object]
-//     }
-//   ],
-//   paginacao: { limit: 1, offset: 0, total: 15680 }
-// }

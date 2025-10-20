@@ -143,6 +143,8 @@ export function definirEmpresas() {
         const tokenSource = process.env[`${empresa}_TOKEN_SOURCE`]; // Obrigatório ('db' ou 'env')
         const idDeposito = process.env[`${empresa}_ID_DEPOSITO`];
         const isMaster = process.env[`${empresa}_IS_MASTER`] === 'true'; // Não é obrigatório, fallback para false
+        const transfPositivo = process.env[`${empresa}_SALDO_POSITIVO`] === 'false' ? false : true; // Não é obrigatório, o default é true
+        const transfNegativo = process.env[`${empresa}_SALDO_NEGATIVO`] === 'false' ? false : true; // Não é obrigatório, o default é true
         let empresaToken = null;
         let tokenQuery = null;
 
@@ -162,6 +164,8 @@ export function definirEmpresas() {
                 passTiny,
                 tokenSource: tokenSource,
                 idDeposito,
+                transfPositivo,
+                transfNegativo,
                 isMaster: isMaster,
                 empresaToken: empresaToken,
                 tokenQuery: tokenQuery,
@@ -183,6 +187,8 @@ export function definirEmpresas() {
                 passTiny,
                 tokenSource: tokenSource,
                 idDeposito,
+                transfPositivo,
+                transfNegativo,
                 isMaster: isMaster,
                 empresaToken: empresaToken,
                 tokenQuery: tokenQuery,
