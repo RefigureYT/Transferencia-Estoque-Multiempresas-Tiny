@@ -1,6 +1,6 @@
 // ###   ./src/services/session.service.js   ###
 import { buscarNovoTokenDaAPI } from './tinyApi.service.js';
-import { listaEmpresasDefinidas } from '../main.js';
+import { listaEmpresasDefinidas, sendMessageMain } from '../main.js';
 
 let _accessToken = null;
 let _listaTokensEmpresa = [];
@@ -10,7 +10,6 @@ let _listaTokensEmpresa = [];
  * Esta é a principal função que 99% da aplicação vai usar!
  * @returns {Promise<string>} O token de acesso válido.
  */
-
 export async function getAccessToken(empresa) {
     _listaTokensEmpresa = listaEmpresasDefinidas;
 
@@ -36,7 +35,6 @@ export async function getAccessToken(empresa) {
  * Esta função será chamada quando der os erros 401 (Unauthorized) ou 403 (Forbidden)
  * @returns {Promise<string>} O NOVO TOKEN DE ACESSO.
  */
-
 export async function revalidarToken(querySql) {
     try {
         console.log('[SessionService] Forçando revalidação do token...');
@@ -53,6 +51,7 @@ export async function revalidarToken(querySql) {
         return _accessToken;
     } catch (error) {
         console.log('❌ FALHA CRÍTICA ao revalidar o token de acesso:', error);
+        await sendMessageMain(`❌ FALHA CRÍTICA ao revalidar o token de acesso: ${error}`);
         // Se não conseguirmos um novo token, a aplicação pode continuar.
         // Limpamos o token antigo para forçar uma nova tentativa da próxima vez.
         _accessToken = null;

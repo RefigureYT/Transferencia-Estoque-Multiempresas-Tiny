@@ -3,6 +3,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import { sendMessageMain } from '../main.js';
 
 puppeteer.use(StealthPlugin()); // Ativa o modo stealth
 
@@ -60,6 +61,7 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
 
         const executablePath = resolveChromePath();
         if (!executablePath) {
+            await sendMessageMain('Chrome/Chromium não encontrado. Defina PUPPETEER_EXECUTABLE_PATH ou instale o navegador.');
             throw new Error('Chrome/Chromium não encontrado. Defina PUPPETEER_EXECUTABLE_PATH ou instale o navegador.');
         }
 
@@ -138,35 +140,53 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
                 headers: {
                     Cookie: cookieHeader,
                     'User-Agent': 'Mozilla/5.0'
-                },
-                timeout: 600000 // Aumentado para 10 minutos (600 segundos) para o download
+                }
+                // ⚠️ Não coloque "timeout" aqui; use request.setTimeout(...)
             };
 
+            // 1) Registre o erro do fileStream antes de pipe (para capturar erro de escrita)
+            fileStream.on('error', (err) => {
+                console.error('❌ Erro ao escrever o arquivo:', err);
+                void sendMessageMain(`❌ Erro ao escrever o arquivo: ${err?.message || err}`).catch(() => { });
+                // tenta remover arquivo parcial
+                try { if (fs.existsSync(downloadFilePath)) fs.unlinkSync(downloadFilePath); } catch { }
+                reject(new Error('Erro ao salvar o arquivo.'));
+            });
+
             const request = https.get(downloadUrl, options, (response) => {
+                // 2) Checa status
                 if (response.statusCode !== 200) {
-                    return reject(new Error(`Falha no download: Código de status ${response.statusCode}`));
+                    void sendMessageMain(`❌ Falha no download: HTTP ${response.statusCode}`).catch(() => { });
+                    // consome o corpo para liberar socket antes de rejeitar
+                    response.resume();
+                    return reject(new Error(`Falha no download: HTTP ${response.statusCode}`));
                 }
 
+                // 3) Pipe com finalização
                 response.pipe(fileStream);
+
                 fileStream.on('finish', () => {
-                    fileStream.close();
+                    try { fileStream.close(); } catch { }
                     console.log('✅ Download concluído com sucesso!');
                     resolve();
                 });
-
-                fileStream.on('error', (err) => {
-                    console.error('❌ Erro ao escrever o arquivo:', err);
-                    reject(new Error('Erro ao salvar o arquivo.'));
-                });
             });
 
-            request.on('timeout', () => {
-                request.destroy(); // Aborta a requisição
+            // 4) Timeout correto
+            request.setTimeout(600_000, () => {
+                console.error('❌ Timeout de download atingido (10 min).');
+                void sendMessageMain('❌ Timeout de download atingido.').catch(() => { });
+                request.destroy(new Error('Timeout de download atingido.'));
+                // fileStream será fechado pelo GC; se tiver sido criado, tente remover o parcial:
+                try { if (fs.existsSync(downloadFilePath)) fs.unlinkSync(downloadFilePath); } catch { }
                 reject(new Error('Timeout de download atingido. A operação demorou muito.'));
             });
 
+            // 5) Erros da requisição
             request.on('error', (err) => {
                 console.error('❌ Erro na requisição HTTPS:', err);
+                void sendMessageMain(`❌ Erro na requisição de download: ${err?.message || err}`).catch(() => { });
+                try { if (fs.existsSync(downloadFilePath)) fs.unlinkSync(downloadFilePath); } catch { }
                 reject(new Error('Erro na requisição de download.'));
             });
         });
@@ -175,6 +195,7 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
 
     } catch (err) {
         console.error('❌ Erro na execução da automação:', err.message);
+        await sendMessageMain(`❌ Erro na execução da automação: ${err.message}`);
         throw err;
     } finally {
         await _encerrarExecucao(browser, downloadFilePath);
@@ -186,7 +207,7 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
  * @param {string} dirPath - Caminho do diretório
  * @param {string[]} allowedExtensions - Lista de extensões a apagar (ex.: ['.csv', '.xlsx'])
  */
-export function limparArquivosPorExtensao(dirPath, allowedExtensions) {
+export async function limparArquivosPorExtensao(dirPath, allowedExtensions) {
     if (!fs.existsSync(dirPath)) {
         console.warn(`⚠️ Diretório não existe: ${dirPath}`);
         return;
@@ -206,6 +227,7 @@ export function limparArquivosPorExtensao(dirPath, allowedExtensions) {
             }
         } catch (err) {
             console.error(`❌ Erro ao processar ${file}:`, err.message);
+            await sendMessageMain(`❌ Erro ao processar ${file}: ${err.message}`);
         }
     }
 }

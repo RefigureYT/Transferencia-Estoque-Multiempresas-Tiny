@@ -7,6 +7,7 @@ import { DateTime } from "luxon";
 import { executarQueryInDb } from './database.service.js';
 import { listaEmpresasDefinidas } from '../main.js';
 import { getAccessToken, revalidarToken } from './session.service.js';
+import { sendMessageMain } from '../main.js';
 
 const _url = 'https://api.tiny.com.br/public-api/v3'; // UrlTinyDefault
 
@@ -72,6 +73,7 @@ export async function getProdTiny(typeQuery, query, empresa, situacao = 'A') {
 
     if (!empresaTiny) {
         console.error(`❌ Empresa "${empresa}" não encontrada na lista de configurações.`);
+        await sendMessageMain(`❌ Empresa "${empresa}" não encontrada na lista de configurações.`);
         process.exit(1); // Encerra com erro
     }
 
@@ -86,7 +88,7 @@ export async function getProdTiny(typeQuery, query, empresa, situacao = 'A') {
             // 2. Tenta fazer a chamada à API.
             // console.log(`[API] Buscando produto para a empresa ${empresa}...`);
             let auth = `Bearer ${empresaTiny.accessToken}`;
-            const config = { headers: { authorization: auth } };
+            const config = { headers: { Authorization: auth } };
             const _urlMontada = `${_url}/produtos?${typeQuery}=${query}&situacao=${situacao}`;
 
             if (tentativa > 2) {
@@ -102,7 +104,8 @@ export async function getProdTiny(typeQuery, query, empresa, situacao = 'A') {
             // Se não houver 'err.response', é um erro de rede ou outro problema.
             if (!err.response) {
                 console.error('❌ Erro de rede ou inesperado:', err.message);
-                throw err.message; // Lança o erro e para, pois não é um erro de API tratável.
+                await sendMessageMain(`❌ Erro de rede ou inesperado: ${err.message}`);
+                throw err; // mantém stack e metadados
             }
 
             const status = err.response.status;
@@ -134,6 +137,7 @@ export async function getProdTiny(typeQuery, query, empresa, situacao = 'A') {
                 } else {
                     // Se for a última tentativa, lança o erro final.
                     console.error(`❌ FALHA: A API continuou retornando 'Too Many Requests' após ${maxTentativas} tentativas.`);
+                    await sendMessageMain(`❌ FALHA: A API continuou retornando 'Too Many Requests' após ${maxTentativas} tentativas.`);
                     throw new Error(`API sobrecarregada. Falha após ${maxTentativas} tentativas.`);
                 }
                 continue; // Garante que o loop continue para a próxima iteração
@@ -143,15 +147,20 @@ export async function getProdTiny(typeQuery, query, empresa, situacao = 'A') {
                 console.error('[❌ ERRO - tinyApi.service.js] Não foi encontrado o cadastro deste produto.');
                 return [];
             }
+
             // Se for qualquer outro erro de API (404, 500, etc.), não adianta tentar de novo.
             // Para todos os outros erros, lança o erro detalhado
-            throw new TinyApiError(`❌ Erro de API não tratável. Erro ao buscar produto na empresa ${empresa}.`, {
-                status: status || 'SEM_STATUS',
-                url,
-                method,
-                responseData: err?.response?.data,
-                headers: { ...headers, authorization: "***TOKEN_MASCARADO***" }
-            });
+            throw new TinyApiError(
+                `❌ Erro de API não tratável ao buscar produto na empresa ${empresa}.`,
+                {
+                    status: status ?? 'SEM_STATUS',
+                    url: `${_url}/produtos?${encodeURIComponent(typeQuery)}=${encodeURIComponent(String(query))}&situacao=${encodeURIComponent(String(situacao))}`,
+                    method: 'GET',
+                    requestData: undefined,
+                    responseData: err?.response?.data,
+                    headers: { Authorization: "***TOKEN_MASCARADO***" }
+                }
+            );
         }
     }
 }
@@ -199,6 +208,7 @@ export async function editEstoqueProdTiny(fromEmpresa, idProd, tipoMovimento, qt
 
     if (!empresaTiny) {
         console.error(`❌ Empresa "${fromEmpresa}" não encontrada na lista de configurações.`);
+        await sendMessageMain(`❌ Empresa "${fromEmpresa}" não encontrada na lista de configurações.`);
         process.exit(1); // Encerra com erro
     }
 
@@ -217,7 +227,7 @@ export async function editEstoqueProdTiny(fromEmpresa, idProd, tipoMovimento, qt
         try {
             // 2. Tenta fazer a chamada à API.
             let auth = `Bearer ${empresaTiny.accessToken}`;
-            const config = { headers: { authorization: auth } };
+            const config = { headers: { Authorization: auth } };
             const _urlMontada = `${_url}/estoque/${idProd}`;
 
             // Captura DATA (tempo)
@@ -259,7 +269,8 @@ export async function editEstoqueProdTiny(fromEmpresa, idProd, tipoMovimento, qt
             // Se não houver 'err.response', é um erro de rede ou outro problema.
             if (!err.response) {
                 console.error('❌ Erro de rede ou inesperado:', err.message);
-                throw err.message; // Lança o erro e para, pois não é um erro de API tratável.
+                await sendMessageMain(`❌ Erro de rede ou inesperado: ${err.message}`);
+                throw err; // mantém stack e metadados
             }
 
             const status = err.response.status;
@@ -293,14 +304,24 @@ export async function editEstoqueProdTiny(fromEmpresa, idProd, tipoMovimento, qt
                 } else {
                     // Se for a última tentativa, lança o erro final.
                     console.error(`❌ FALHA: A API continuou retornando 'Too Many Requests' após ${maxTentativas} tentativas.`);
+                    await sendMessageMain(`❌ FALHA: A API continuou retornando 'Too Many Requests' após ${maxTentativas} tentativas.`);
                     throw new Error(`API sobrecarregada. Falha após ${maxTentativas} tentativas.`);
                 }
                 continue; // Garante que o loop continue para a próxima iteração
             }
 
-            // Se for qualquer outro erro de API (404, 500, etc.), não adianta tentar de novo.
-            console.error(`❌ Erro de API não tratável (Status: ${status}).`, err.message);
-            throw err.message; // Lança o erro e para.
+            // Se for qualquer outro erro de API (404, 500, etc.), lança erro detalhado mantendo stack
+            throw new TinyApiError(
+                `❌ Erro de API não tratável ao editar estoque (empresa ${fromEmpresa}).`,
+                {
+                    status: status ?? 'SEM_STATUS',
+                    url: _urlMontada,
+                    method: 'POST',
+                    requestData: data,
+                    responseData: err?.response?.data,
+                    headers: { ...config.headers, Authorization: "***TOKEN_MASCARADO***" }
+                }
+            );
         }
     }
 }
@@ -311,6 +332,7 @@ export async function getEstoqueProdTiny(empresa) {
 
     if (!empresaTiny) {
         console.error(`❌ Empresa "${empresa}" não encontrada na lista de configurações.`);
+        await sendMessageMain(`❌ Empresa "${empresa}" não encontrada na lista de configurações.`);
         process.exit(1); // Encerra com erro
     }
 
@@ -324,11 +346,17 @@ export async function getEstoqueProdTiny(empresa) {
         try {
 
             const prod = await getProdTiny('limit', '1', empresa);
-            const idProd = prod.itens[0].id;
+            const first = Array.isArray(prod?.itens) && prod.itens.length ? prod.itens[0] : null;
+            if (!first?.id) {
+                console.error('❌ Nenhum produto retornado pela Tiny para inspeção de estoque.');
+                await sendMessageMain('❌ Nenhum produto retornado pela Tiny para inspeção de estoque.');
+                return []; // ou lance um erro, conforme seu fluxo
+            }
+            const idProd = first.id;
 
             // 2. Tenta fazer a chamada à API.
             let auth = `Bearer ${empresaTiny.accessToken}`;
-            const config = { headers: { authorization: auth } };
+            const config = { headers: { Authorization: auth } };
             const _urlMontada = `${_url}/estoque/${idProd}`;
 
             if (tentativa > 2) {
@@ -344,7 +372,8 @@ export async function getEstoqueProdTiny(empresa) {
             // Se não houver 'err.response', é um erro de rede ou outro problema.
             if (!err.response) {
                 console.error('❌ Erro de rede ou inesperado:', err.message);
-                throw err.message; // Lança o erro e para, pois não é um erro de API tratável.
+                await sendMessageMain(`❌ Erro de rede ou inesperado: ${err.message}`);
+                throw err; // mantém stack e metadados
             }
 
             const status = err.response.status;
@@ -376,21 +405,26 @@ export async function getEstoqueProdTiny(empresa) {
                 } else {
                     // Se for a última tentativa, lança o erro final.
                     console.error(`❌ FALHA: A API continuou retornando 'Too Many Requests' após ${maxTentativas} tentativas.`);
+                    await sendMessageMain(`❌ FALHA: A API continuou retornando 'Too Many Requests' após ${maxTentativas} tentativas.`);
                     throw new Error(`API sobrecarregada. Falha após ${maxTentativas} tentativas.`);
                 }
                 continue; // Garante que o loop continue para a próxima iteração
             }
 
-            // Para QUALQUER outro erro (404, 500, etc.), lança o TinyApiError com todos os detalhes. (não adianta tentar de novo)
-            // Isso vai "entregar" o erro para o código que chamou esta função.
-            throw new TinyApiError(`❌ Erro de API não tratável ao alterar estoque.`, {
-                status: status || 'SEM_STATUS', // Garante que status sempre tenha um valor
-                url,
-                method,
-                requestData,
-                responseData: err?.response?.data,
-                headers: { ...headers, authorization: "***TOKEN_MASCARADO***" } // Mascara o token por segurança
-            });
+            // Se for qualquer outro erro de API (404, 500, etc.), não adianta tentar de novo.
+            // Para todos os outros erros, lança o erro detalhado com contexto correto
+            // Erro de API não tratável (ex.: 404/500 etc.)
+            throw new TinyApiError(
+                `❌ Erro de API não tratável ao buscar estoques.`,
+                {
+                    status: status ?? 'SEM_STATUS',
+                    url: _urlMontada,
+                    method: 'GET',
+                    requestData: undefined,
+                    responseData: err?.response?.data,
+                    headers: { ...config.headers, authorization: "***TOKEN_MASCARADO***" }
+                }
+            );
         }
     }
 }

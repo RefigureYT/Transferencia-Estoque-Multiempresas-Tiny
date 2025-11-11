@@ -2,6 +2,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import pg from 'pg';
+import { sendMessageMain } from '../main.js';
 
 const { Pool } = pg;
 const poolConfig = {
@@ -41,7 +42,6 @@ pool.on('remove', (client) => {
  * @description Testa a conexão com o banco de dados usando variáveis de ambiente.
  * @returns {Promise<boolean>} Retorna true se a conexão for bem-sucedida, caso contrário, lança um erro.
  */
-
 export async function conectarAoBanco() {
     const hostBanco = process.env.DB_HOST;
     const user = process.env.DB_USER;
@@ -56,6 +56,7 @@ export async function conectarAoBanco() {
     }
     catch (error) {
         console.error(`[database.js] Erro ao conectar ao banco de dados: ${error.message}`);
+        await sendMessageMain(`❌ Erro ao conectar ao banco de dados: ${error.message}`);
         return false; // Retorna false porque houve um erro na conexão
     } finally {
         if (client) {
@@ -72,7 +73,6 @@ export async function conectarAoBanco() {
  * @param {Array} params - Uma array com os valores para substituir $1, $2, etc.
  * @returns {Promise<Array>} Um array com as linhas retornadas pela query.
  */
-
 export async function executarQueryInDb(sqlCommand, params = []) {
     let client;
     try {
@@ -83,6 +83,7 @@ export async function executarQueryInDb(sqlCommand, params = []) {
         return resultado.rows;
     } catch (error) {
         console.error("❌ Erro ao executar comando no banco de dados:", error.message);
+        await sendMessageMain(`❌ Erro ao executar comando no banco de dados: ${error.message}`);
         // Lança o erro para que a função que chamou saiba que algo deu errado
         throw error;
     } finally {

@@ -71,6 +71,147 @@ Para cada sigla de empresa listada em `ACTIVE_COMPANIES`, você deve adicionar u
 | `EMPRESA_USER_TINY` | Para filiais | O nome de usuário para login no Tiny ERP. Necessário para baixar a planilha de inventário. |
 | `EMPRESA_PASS_TINY` | Para filiais | A senha para login no Tiny ERP. |
 
+
+## Integração opcional: EvolutionAPI (WhatsApp)
+
+> **Resumo:** Quando habilitada, a integração permite enviar mensagens de texto de notificação/erro via WhatsApp usando a EvolutionAPI (instância própria). É **opcional** e fica **desligada por padrão**.
+
+### Como habilitar/desabilitar
+- **Desligado (padrão):** `ACTIVE_TELS=NONE` e mantenha as variáveis da EvolutionAPI comentadas no `.env`.
+- **Ligado:** defina `ACTIVE_TELS` com os rótulos de telefones (ex.: `TEL1,TEL2`) e preencha as variáveis da EvolutionAPI.
+
+### Variáveis de ambiente (EvolutionAPI)
+
+| Variável        | Obrigatório | Exemplo                           | Descrição |
+|-----------------|:----------:|-----------------------------------|-----------|
+| `ACTIVE_TELS`   |   Sim¹     | `NONE` \| `TEL1,TEL2`             | Lista de rótulos de telefones de emergência. Use `NONE` para manter desligado. |
+| `EVO_BASE_URL`  |   Sim²     | `https://api.seudominio.com.br`   | Base URL da EvolutionAPI. |
+| `EVO_API_KEY`   |   Sim²     | `xxxxxxxxxxxxxxxx`                | Chave de API (header `apikey`). |
+| `INSTANCE_WAPI` |   Sim²     | `MinhaInstancia`                  | Nome da instância EvolutionAPI. |
+| `TEL?_TEL`      |   Sim²     | `5511999999999`                   | Telefones cadastrados, somente dígitos (E.164-like). Ex.: `TEL1_TEL`, `TEL2_TEL`, etc. |
+
+> ¹ Se `ACTIVE_TELS=NONE`, a integração permanece **desligada**.  
+> ² Obrigatórias **somente se** `ACTIVE_TELS` **não** for `NONE`.
+
+**Boas práticas para o `.env`:**
+- Mantenha `ACTIVE_TELS=NONE` quando não quiser notificar via WhatsApp.
+- Ao habilitar, defina **apenas** os rótulos que realmente serão usados (ex.: `TEL1,TEL2`) e crie as respectivas chaves `TEL1_TEL`, `TEL2_TEL`, etc.
+
+### Comportamento de validação
+
+Durante o bootstrap, o script:
+1. Lê `ACTIVE_TELS`.  
+   - Se `NONE` → a integração **não é utilizada** (nenhum envio).  
+   - Se lista (`TEL1,TEL2, ...`) → verifica:
+     - `EVO_BASE_URL`, `EVO_API_KEY`, `INSTANCE_WAPI` **preenchidos**;
+     - Para cada rótulo em `ACTIVE_TELS`, deve existir `${RÓTULO}_TEL` no `.env`.  
+2. Em caso de falta de variáveis obrigatórias, o script **registra o erro** claramente no console e **encerra** a execução para evitar comportamento parcial.
+
+> **Observação:** Se você deseja seguir executando mesmo sem WhatsApp, mantenha `ACTIVE_TELS=NONE`.
+
+### Uso programático (exemplo de envio)
+
+```ts
+import axios from "axios";
+
+const EVO_BASE_URL = process.env.EVO_BASE_URL || "";
+const EVO_API_KEY  = (process.env.EVO_API_KEY || "").trim();
+const api = axios.create({
+  baseURL: EVO_BASE_URL,
+  headers: { apikey: EVO_API_KEY }, // EvolutionAPI usa header "apikey" (minúsculo)
+  timeout: 10000
+});
+
+// Sanitiza número (E.164-like: somente dígitos, exige DDI+DDD)
+function sanitizeNumber(input: string | number): string {
+  const digits = String(input ?? "").replace(/\D/g, "");
+  if (digits.length < 10) throw new Error(\`Número inválido: "\${input}"\`);
+  return digits;
+}
+
+// Retry simples com backoff exponencial
+async function withRetry<T>(fn: () => Promise<T>, { retries = 3, baseDelayMs = 400 } = {}): Promise<T> {
+  let attempt = 0, lastErr: any;
+  while (attempt <= retries) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const status = err?.response?.status;
+      const retryable = err.code === "ECONNABORTED" || err.code === "ENOTFOUND" || err.code === "ECONNRESET" ||
+                        (typeof status === "number" && status >= 500 && status < 600) || status === 429;
+      if (!retryable || attempt === retries) break;
+      const delay = Math.round(baseDelayMs * 2 ** attempt + Math.random() * 100);
+      await new Promise(r => setTimeout(r, delay));
+      attempt++;
+    }
+  }
+  throw lastErr;
+}
+
+/** Envia texto via EvolutionAPI */
+export async function sendMessage({
+  number,
+  text,
+  instance = process.env.INSTANCE_WAPI || "default",
+  linkPreview = false,
+  idempotencyKey
+}: {
+  number: string | number;
+  text: string;
+  instance?: string;
+  linkPreview?: boolean;
+  idempotencyKey?: string;
+}) {
+  const to = sanitizeNumber(number);
+  const body = { number: to, text: String(text ?? ""), linkPreview: Boolean(linkPreview) };
+  if (!body.text.trim()) throw new Error("Texto vazio.");
+
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) headers["x-idempotency-key"] = String(idempotencyKey);
+
+  const resp = await withRetry(() => api.post(\`/message/sendText/\${encodeURIComponent(instance)}\`, body, { headers }));
+  return resp.data; // messageId, status, etc (conforme EvolutionAPI)
+}
+```
+
+### Exemplos de uso
+
+- **Enviar mensagem simples** (em código):
+  ```ts
+  await sendMessage({ number: "5511999999999", text: "Olá! Integração EvolutionAPI ativa." });
+  ```
+
+- **Padrão de logs recomendado** (JSON Lines, sem segredos):
+  - Sucesso: registra `to`, `instance`, `http_status`, `message_status`, `message_id`, `elapsed_ms`.
+  - Erro: registra `to`, `instance`, `http_status`, `code`, `elapsed_ms`, `response` (sanitizado).
+
+### Limites, segurança e operação
+
+- **Headers sensíveis** nunca devem ser logados.
+- Rotacione `EVO_API_KEY` periodicamente.
+- Use `idempotencyKey` quando o backend suportar, para evitar duplicidades.
+- Em **429/5xx/timeouts**, o cliente aplica retry com backoff exponencial.
+- Timeout padrão das requests: **10s** (ajustável no `axios.create`).
+
+### Troubleshooting
+
+- **\`Erro: defina EVO_BASE_URL/EVO_API_KEY/INSTANCE_WAPI\`**  
+  → Preencha as variáveis quando `ACTIVE_TELS` **não** for `NONE`.
+
+- **\`Erro: \${TEL}_TEL ausente\`**  
+  → Para cada rótulo listado em `ACTIVE_TELS` crie a variável correspondente no `.env`.
+
+- **\`HTTP 401/403\`**  
+  → Verifique a validade de `EVO_API_KEY` e permissões da instância.
+
+- **\`HTTP 429\` (rate limit)**  
+  → Aumente espaçamento entre envios ou implemente filas/limitação.
+
+- **Número inválido**  
+  → Use apenas dígitos com DDI+DDD (mín. 10 dígitos). Ex.: `5511999999999`.
+
+
 ## Como Executar o Script
 
 Após configurar o arquivo `.env`, você pode iniciar o script com o seguinte comando:
@@ -107,4 +248,3 @@ O script começará a executar o processo de validação, download de planilhas 
 -   **Validação do `.env`:** Se o script encerrar no início, verifique as mensagens de erro. Elas indicarão exatamente qual variável de ambiente está faltando ou configurada incorretamente.
 -   **Falha no Login (Puppeteer):** Se a automação de login falhar, pode ser que a interface do Tiny ERP tenha sido atualizada. Verifique os seletores de CSS no arquivo `puppeteer-api.js`. Você também pode desativar o modo `headless` no Puppeteer para visualizar a automação em tempo real.
 -   **Erros da API Tiny:** Erros de API são capturados e detalhados no console, incluindo o status da resposta e a mensagem de erro, o que ajuda a diagnosticar problemas de comunicação com o Tiny ERP.
-
