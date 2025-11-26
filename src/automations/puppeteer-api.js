@@ -117,7 +117,7 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
         console.log('➡️ Clicando no botão "Avançar"...');
         await page.evaluate(() => {
             const btn = document.querySelector(
-                '#kc-content-wrapper > react-login-wc > section > div > main > aside.sc-jsJBEP.hfxeyl > div > button'
+                '#input-wrapper > button',
             );
             if (btn) btn.click();
         });
@@ -132,7 +132,7 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
         console.log('🔓 Clicando no botão "Entrar"...');
         await page.evaluate(() => {
             const btn = document.querySelector(
-                '#kc-content-wrapper > react-login-wc > section > div > main > aside.sc-jsJBEP.hfxeyl > div > form > button'
+                '#input-wrapper > button'
             );
             if (btn) btn.click();
         });
@@ -207,4 +207,3 @@ export async function baixarPlanilhaDeposito(user, pass, idDeposito, outputPath)
         await _encerrarExecucao(browser, downloadFilePath);
     }
 }
-
