@@ -2,10 +2,12 @@
   "name": "transferencia-estoque-multiempresas-tiny",
   "version": "1.0.0",
   "description": "Transfere automaticamente os estoques de múltiplas empresas para o depósito principal, permitindo a entrada de NF-es e o estorno de produtos (devoluções), garantindo consistência e evitando divergências em kits.",
-  "main": "index.js",
+  "main": "build/main.js",
   "type": "module",
   "scripts": {
-    "start": "node src/main.js",
+    "dev": "tsx src/main.ts",
+    "build": "tsx",
+    "start": "node .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -30,5 +32,13 @@
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^25.0.3",
+    "@types/pg": "^8.16.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }
